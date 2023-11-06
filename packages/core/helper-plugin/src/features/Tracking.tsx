@@ -224,14 +224,25 @@ interface LogoEvent {
 interface TokenEvents {
   name:
     | 'didCopyTokenKey'
+    | 'didAddTokenFromList'
+    | 'didCreateToken'
+    | 'didEditToken'
+    | 'didEditTokenFromList'
     | 'willAccessTokenList'
     | 'willAddTokenFromList'
     | 'willDeleteToken'
     | 'willEditTokenFromList';
   properties: {
-    tokenType: string;
+    tokenType: 'api-token' | 'transfer-token';
   };
 }
+
+type WillModifyTokenEvent = TokenEvents & {
+  name: 'willCreateToken' | 'willEditToken';
+  properties: {
+    type: 'custom' | 'full-access' | 'read-only';
+  };
+};
 
 type EventsWithProperties =
   | DidAccessTokenListEvent
@@ -245,6 +256,7 @@ type EventsWithProperties =
   | DidSubmitWithErrorsFirstAdminEvent
   | LogoEvent
   | TokenEvents
+  | WillModifyTokenEvent
   | WillNavigateEvent;
 
 export type TrackingEvent = EventWithoutProperties | EventsWithProperties;
