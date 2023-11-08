@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import * as React from 'react';
 
 import {
   Box,
@@ -19,48 +19,55 @@ import {
   useFetchClient,
   useNotification,
   useOverlayBlocker,
+  translatedErrors,
+  useAPIErrorHandler,
+  ApiError,
 } from '@strapi/helper-plugin';
 import { Formik } from 'formik';
-import PropTypes from 'prop-types';
 import { useIntl } from 'react-intl';
 import { useMutation } from 'react-query';
+import * as yup from 'yup';
 
-import { useEnterprise } from '../../../../../../hooks/useEnterprise';
-import { MagicLinkCE } from '../../components/MagicLink';
-import SelectRoles from '../../components/SelectRoles';
+import { useEnterprise } from '../../../../../hooks/useEnterprise';
+import { FormLayout } from '../../../../../types/form';
 
-import { FORM_LAYOUT, FORM_SCHEMA, FORM_INITIAL_VALUES, ROLE_LAYOUT, STEPPER } from './constants';
+import { MagicLinkCE } from './MagicLinkCE';
+import { SelectRoles } from './SelectRoles';
+import { Create } from '../../../../../../../shared/contracts/user';
+import { AxiosError, AxiosResponse } from 'axios';
 
 const ModalForm = ({ onSuccess, onToggle }) => {
-  const [currentStep, setStep] = useState('create');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [registrationToken, setRegistrationToken] = useState(null);
+  const [currentStep, setStep] = React.useState<keyof typeof STEPPER>('create');
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [registrationToken, setRegistrationToken] = React.useState('');
   const { formatMessage } = useIntl();
   const toggleNotification = useNotification();
   const { lockApp, unlockApp } = useOverlayBlocker();
   const { post } = useFetchClient();
+  const { formatAPIError } = useAPIErrorHandler();
   const roleLayout = useEnterprise(
     ROLE_LAYOUT,
     async () =>
       (
         await import(
-          '../../../../../../../../ee/admin/src/pages/SettingsPage/pages/Users/ListPage/ModalForm/constants'
+          '../../../../../../../ee/admin/src/pages/SettingsPage/pages/Users/components/ModalForm'
         )
       ).ROLE_LAYOUT,
     {
       combine(ceRoles, eeRoles) {
-        return [...ceRoles, eeRoles];
+        return [...ceRoles, ...eeRoles];
       },
 
       defaultValue: [],
     }
   );
-  const initialValues = useEnterprise(
+
+  const initialValues = useEnterprise<InitialData>(
     FORM_INITIAL_VALUES,
     async () =>
       (
         await import(
-          '../../../../../../../../ee/admin/src/pages/SettingsPage/pages/Users/ListPage/ModalForm/constants'
+          '../../../../../../../ee/admin/src/pages/SettingsPage/pages/Users/components/ModalForm'
         )
       ).FORM_INITIAL_VALUES,
     {
@@ -79,35 +86,55 @@ const ModalForm = ({ onSuccess, onToggle }) => {
     async () =>
       (
         await import(
-          '../../../../../../../../ee/admin/src/pages/SettingsPage/pages/Users/components/MagicLink'
+          '../../../../../../../ee/admin/src/pages/SettingsPage/pages/Users/components/MagicLinkEE'
         )
       ).MagicLinkEE
   );
-  const postMutation = useMutation(
-    (body) => {
-      return post('/admin/users', body);
-    },
+  const postMutation = useMutation<
+    AxiosResponse<Create.Response>,
+    AxiosError<Required<Create.Response>>,
+    Create.Request['body']
+  >(
+    (body) =>
+      post<Create.Response, AxiosResponse<Create.Response>, Create.Request['body']>(
+        '/admin/users',
+        body
+      ),
     {
-      async onSuccess({ data }) {
-        setRegistrationToken(data.data.registrationToken);
+      onMutate() {
+        if (lockApp) {
+          lockApp();
+        }
 
-        await onSuccess();
+        setIsSubmitting(true);
+      },
+      async onSuccess({ data: { data } }) {
+        if (data.registrationToken) {
+          setRegistrationToken(data.registrationToken);
+          await onSuccess();
 
-        goNext();
-        setIsSubmitting(false);
+          goNext();
+        } else {
+          toggleNotification({
+            type: 'warning',
+            message: { id: 'notification.error', defaultMessage: 'An error occured' },
+          });
+        }
       },
       onError(err) {
-        setIsSubmitting(false);
-
         toggleNotification({
           type: 'warning',
-          message: { id: 'notification.error', defaultMessage: 'An error occured' },
+          message: formatAPIError(err),
         });
 
         throw err;
       },
       onSettled() {
-        unlockApp();
+        if (unlockApp) {
+          unlockApp();
+        }
+
+        setIsSubmitting(false);
       },
     }
   );
@@ -118,14 +145,13 @@ const ModalForm = ({ onSuccess, onToggle }) => {
   });
 
   const handleSubmit = async (body, { setErrors }) => {
-    lockApp();
-    setIsSubmitting(true);
     try {
       await postMutation.mutateAsync(body);
     } catch (err) {
-      unlockApp();
-
-      if (err?.response?.data?.error.message === 'Email already taken') {
+      if (
+        err instanceof AxiosError &&
+        err.response?.data?.error.message === 'Email already taken'
+      ) {
         setErrors({ email: err.response.data.error.message });
       }
     }
@@ -263,9 +289,102 @@ const ModalForm = ({ onSuccess, onToggle }) => {
   );
 };
 
-ModalForm.propTypes = {
-  onToggle: PropTypes.func.isRequired,
-  onSuccess: PropTypes.func.isRequired,
+interface InitialData {
+  firstname?: string;
+  lastname?: string;
+  email?: string;
+  roles?: string[];
+  useSSORegistration?: boolean;
+}
+
+const FORM_INITIAL_VALUES = {
+  firstname: '',
+  lastname: '',
+  email: '',
+  roles: [],
 };
 
-export default ModalForm;
+const ROLE_LAYOUT = [] satisfies FormLayout[][];
+
+const FORM_LAYOUT = [
+  [
+    {
+      intlLabel: {
+        id: 'Auth.form.firstname.label',
+        defaultMessage: 'First name',
+      },
+      name: 'firstname',
+      placeholder: {
+        id: 'Auth.form.firstname.placeholder',
+        defaultMessage: 'e.g. Kai',
+      },
+      type: 'text',
+      size: {
+        col: 6,
+        xs: 12,
+      },
+      required: true,
+    },
+    {
+      intlLabel: {
+        id: 'Auth.form.lastname.label',
+        defaultMessage: 'Last name',
+      },
+      name: 'lastname',
+      placeholder: {
+        id: 'Auth.form.lastname.placeholder',
+        defaultMessage: 'e.g. Doe',
+      },
+      type: 'text',
+      size: {
+        col: 6,
+        xs: 12,
+      },
+    },
+  ],
+  [
+    {
+      intlLabel: {
+        id: 'Auth.form.email.label',
+        defaultMessage: 'Email',
+      },
+      name: 'email',
+      placeholder: {
+        id: 'Auth.form.email.placeholder',
+        defaultMessage: 'e.g. kai.doe@strapi.io',
+      },
+      type: 'email',
+      size: {
+        col: 6,
+        xs: 12,
+      },
+      required: true,
+    },
+  ],
+] satisfies FormLayout[][];
+
+const FORM_SCHEMA = yup.object().shape({
+  firstname: yup.string().trim().required(translatedErrors.required),
+  lastname: yup.string(),
+  email: yup.string().email(translatedErrors.email).required(translatedErrors.required),
+  roles: yup.array().min(1, translatedErrors.required).required(translatedErrors.required),
+});
+
+const STEPPER = {
+  create: {
+    buttonSubmitLabel: {
+      id: 'app.containers.Users.ModalForm.footer.button-success',
+      defaultMessage: 'Invite user',
+    },
+    isDisabled: false,
+    next: 'magic-link',
+  },
+  'magic-link': {
+    buttonSubmitLabel: { id: 'global.finish', defaultMessage: 'Finish' },
+    isDisabled: true,
+    next: null,
+  },
+} as const;
+
+export { ModalForm };
+export type { InitialData };

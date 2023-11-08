@@ -36,13 +36,9 @@ export type AdminUserCreationPayload = Omit<AdminUser, 'roles' | 'id'> & {
   roles: TEntity.ID[];
 };
 
-export type SanitizedAdminUser = Omit<
-  AdminUser,
-  'password' | 'resetPasswordToken' | 'registrationToken' | 'roles'
-> & {
+export type SanitizedAdminUser = Omit<AdminUser, 'password' | 'resetPasswordToken' | 'roles'> & {
   roles: SanitizedAdminRole[];
 };
-
 export interface AdminRole extends Entity {
   name: string;
   code: string;

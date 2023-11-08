@@ -1,7 +1,7 @@
 import { errors } from '@strapi/utils';
 
 import type { AdminUserCreationPayload, SanitizedAdminUser } from './shared';
-import type { Entity, EntityService } from '@strapi/types';
+import type { Entity } from '@strapi/types';
 
 /**
  * /create - Create an admin user
@@ -21,11 +21,12 @@ export declare namespace Create {
 /**
  * /find - Find admin users
  */
+
 export declare namespace FindAll {
   // TODO make the types for this
   export interface Request {
-    query: EntityService.Params.Pick<'admin::user', 'sort' | 'filters' | 'fields'>;
     body: {};
+    query: {};
   }
 
   export interface Response {
@@ -99,7 +100,7 @@ export declare namespace DeleteOne {
 }
 
 /**
- * /deleteMany - Delete admin users
+ * /users/batch-delete - Delete admin users
  */
 export declare namespace DeleteMany {
   export interface Request {
